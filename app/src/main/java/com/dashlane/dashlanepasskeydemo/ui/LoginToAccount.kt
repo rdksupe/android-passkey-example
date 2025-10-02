@@ -41,7 +41,12 @@ import com.dashlane.dashlanepasskeydemo.ui.theme.TextColor
 
 @Composable
 @Preview
-fun LoginPage(onCreateAccount: (String) -> Unit = {}, onPasskeyLogin: () -> Unit = {}, emailError: Boolean = false) {
+fun LoginPage(
+    onCreateAccount: (String) -> Unit = {},
+    onPasskeyLogin: () -> Unit = {},
+    onQRCodeScan: () -> Unit = {},
+    emailError: Boolean = false
+) {
     val username = remember { mutableStateOf(TextFieldValue()) }
     Column(
         modifier = Modifier
@@ -120,6 +125,19 @@ fun LoginPage(onCreateAccount: (String) -> Unit = {}, onPasskeyLogin: () -> Unit
                     )
                     Text("Sign in with a passkey", modifier = Modifier.padding(start = 8.dp))
                 }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = { onQRCodeScan() },
+                shape = RoundedCornerShape(50),
+                border = BorderStroke(1.dp, Color(0xFF79747E)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextColor),
+                modifier = Modifier
+                    .height(40.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp)
+            ) {
+                Text("Scan QR Code")
             }
         }
         BuildByDashlane()

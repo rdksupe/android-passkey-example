@@ -17,6 +17,7 @@ import co.nstant.`in`.cbor.model.NegativeInteger
 import co.nstant.`in`.cbor.model.UnicodeString
 import com.dashlane.dashlanepasskeydemo.model.CreatePasskeyResponseData
 import com.dashlane.dashlanepasskeydemo.model.GetPasskeyResponseData
+import com.dashlane.dashlanepasskeydemo.model.QRCodeChallenge
 import com.dashlane.dashlanepasskeydemo.model.UserData
 import com.dashlane.dashlanepasskeydemo.repository.AccountRepository
 import com.google.gson.Gson
@@ -188,5 +189,116 @@ class LoginViewModel @Inject constructor(
      */
     fun disconnect() {
         _state.tryEmit(LoginState.Disconnected)
+    }
+
+    /**
+     * Parse QR code content and handle login/registration
+     */
+    fun handleQRCodeChallenge(qrContent: String, activity: Activity) {
+        viewModelScope.launch {
+            try {
+                val challenge = gson.fromJson(qrContent, QRCodeChallenge::class.java)
+                
+                when (challenge.type) {
+                    "login" -> handleQRLogin(challenge, activity)
+                    "registration", "create" -> handleQRRegistration(challenge, activity)
+                    else -> _state.emit(LoginState.LoginError("Unknown QR code type: ${challenge.type}"))
+                }
+            } catch (e: Exception) {
+                _state.emit(LoginState.LoginError("Invalid QR code format: ${e.message}"))
+                e.printStackTrace()
+            }
+        }
+    }
+
+    /**
+     * Handle QR code login challenge
+     */
+    private suspend fun handleQRLogin(challenge: QRCodeChallenge, activity: Activity) {
+        try {
+            // Build the login request from QR code data
+            val requestJson = gson.toJson(mapOf(
+                "challenge" to challenge.options.challenge,
+                "timeout" to challenge.options.timeout,
+                "userVerification" to challenge.options.userVerification,
+                "rpId" to challenge.options.rpId,
+                "allowCredentials" to (challenge.options.allowCredentials ?: emptyList())
+            ))
+            
+            val option = GetPublicKeyCredentialOption(requestJson)
+            val responseData = getLoginResponse(activity, option)
+            val userData = accountRepository.getUserAccount(responseData.id)
+            
+            if (userData == null) {
+                _state.emit(LoginState.LoginError("No account found for this user"))
+                return
+            }
+            
+            val publicKey = userData.publicKey.toJavaPublicKey()
+            if (verifySignature(responseData, publicKey)) {
+                _state.emit(LoginState.LoginSuccess(userData.email, userData.creationDate))
+            } else {
+                _state.emit(LoginState.LoginError("Signature verification failed"))
+            }
+        } catch (e: Exception) {
+            _state.emit(LoginState.LoginError("QR Login error: ${e.message}"))
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Handle QR code registration challenge
+     */
+    private suspend fun handleQRRegistration(challenge: QRCodeChallenge, activity: Activity) {
+        try {
+            val userId = UUID.randomUUID().toString()
+            val email = challenge.username ?: "qr-user@example.com"
+            
+            // Build the registration request from QR code data
+            val requestJson = gson.toJson(mapOf(
+                "challenge" to challenge.options.challenge,
+                "rp" to mapOf(
+                    "name" to "WebAuthn QR Server",
+                    "id" to challenge.options.rpId
+                ),
+                "user" to mapOf(
+                    "id" to userId,
+                    "name" to email,
+                    "displayName" to email
+                ),
+                "pubKeyCredParams" to listOf(
+                    mapOf("type" to "public-key", "alg" to -7)
+                ),
+                "timeout" to challenge.options.timeout,
+                "attestation" to "none",
+                "excludeCredentials" to emptyList<String>(),
+                "authenticatorSelection" to mapOf(
+                    "authenticatorAttachment" to "platform",
+                    "requireResidentKey" to false,
+                    "residentKey" to "required",
+                    "userVerification" to challenge.options.userVerification
+                )
+            ))
+            
+            val response = credentialManager.createCredential(
+                activity,
+                CreatePublicKeyCredentialRequest(requestJson)
+            )
+            
+            val responseData = gson.fromJson(
+                (response as CreatePublicKeyCredentialResponse).registrationResponseJson,
+                CreatePasskeyResponseData::class.java
+            )
+            
+            val attestationObject = CborDecoder.decode(responseData.response.attestationObject.b64Decode()).first()
+            val authData = (attestationObject as Map).get(UnicodeString("authData")) as ByteString
+            val publicKey = parseAuthData(authData.bytes)
+            val userData = UserData(responseData.id, email, publicKey.b64Encode(), Instant.now().epochSecond)
+            accountRepository.saveUserAccount(responseData.id, userData)
+            _state.emit(LoginState.CreateAccountSuccess)
+        } catch (e: Exception) {
+            _state.emit(LoginState.CreateAccountError("QR Registration error: ${e.message}"))
+            e.printStackTrace()
+        }
     }
 }
