@@ -17,6 +17,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.dashlane.dashlanepasskeydemo.ui.CreateAccountPage
 import com.dashlane.dashlanepasskeydemo.ui.LoginPage
+import com.dashlane.dashlanepasskeydemo.ui.QRCodeScannerScreen
 import com.dashlane.dashlanepasskeydemo.ui.UserConnected
 import com.dashlane.dashlanepasskeydemo.ui.theme.DashlanePasskeyDemoTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -68,7 +69,17 @@ class MainActivity : ComponentActivity() {
                 LoginPage(
                     onCreateAccount = { email -> loginViewModel.validateEmail(email, this@MainActivity) },
                     onPasskeyLogin = { loginViewModel.loginWithPasskey(this@MainActivity) },
+                    onQRCodeScan = { navController.navigate("qr-scanner") },
                     emailError = uiState is LoginState.EmailError
+                )
+            }
+            composable("qr-scanner") {
+                QRCodeScannerScreen(
+                    onQRCodeScanned = { qrContent ->
+                        loginViewModel.handleQRCodeChallenge(qrContent, this@MainActivity)
+                        navController.popBackStack()
+                    },
+                    onCancel = { navController.popBackStack() }
                 )
             }
             composable(

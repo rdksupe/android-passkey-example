@@ -119,6 +119,6 @@ class AccountRepositoryLocal @Inject constructor(
     }
 
     companion object {
-        private const val RELYING_PARTY_ID = "dashlane-passkey-demo.glitch.me"
+        private const val RELYING_PARTY_ID = "webauthn-qr-server.vercel.app"
     }
 }
